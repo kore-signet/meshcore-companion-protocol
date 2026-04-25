@@ -9,7 +9,7 @@ use strum::{EnumDiscriminants, FromRepr, IntoDiscriminant};
 
 use crate::{
     CompanionSer, NullPaddedString,
-    responses::{Contact, ControlData, StatTypes},
+    responses::{Contact, StatTypes},
 };
 
 #[derive(EnumDiscriminants)]
@@ -56,7 +56,7 @@ pub enum HostCommand<'a> {
     SetFloodScope(SetFloodScope<'a>) = 54,
     GetCustomVars = 40,
     SetCustomVar(SetCustomVar<'a>) = 41, // TODO
-    SendControlData(ControlData<'a>) = 55,
+    SendControlData(SendControlData<'a>) = 55,
     GetStats(GetStats) = 56,
     SendAnonReq(SendAnonReq<'a>) = 57,
 }
@@ -255,7 +255,7 @@ impl<'a> CompanionSer for HostCommand<'a> {
                     HostCommand::SetCustomVar(SetCustomVar::companion_deserialize(input)?)
                 }
                 HostCommandType::SendControlData => {
-                    HostCommand::SendControlData(ControlData::companion_deserialize(input)?)
+                    HostCommand::SendControlData(SendControlData::companion_deserialize(input)?)
                 }
                 HostCommandType::GetStats => {
                     HostCommand::GetStats(GetStats::companion_deserialize(input)?)
@@ -1284,5 +1284,25 @@ impl<'a> CompanionSer for SetCustomVar<'a> {
             key: Cow::Borrowed(key),
             value: Cow::Borrowed(val),
         })
+    }
+}
+
+pub struct SendControlData<'a>(pub Cow<'a, [u8]>);
+
+impl<'a> CompanionSer for SendControlData<'a> {
+    type Decoded<'data> = SendControlData<'data>;
+
+    fn ser_size(&self) -> usize {
+        self.0.len()
+    }
+
+    fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
+        let mut out = SliceWriter::new(out);
+        out.write_slice(&self.0);
+        out.finish()
+    }
+
+    fn companion_deserialize<'d>(input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        Ok(SendControlData(Cow::Borrowed(input)))
     }
 }
