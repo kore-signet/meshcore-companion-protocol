@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 memchr = "2.8.0"
 meshcore = { git = "https://github.com/kore-signet/meshcore", version = "0.1.0", default-features = false }
+modular-bitfield = "0.13.1"
 strum = { version = "0.28.0", features = ["derive"] }

@@ -46,7 +46,7 @@ pub enum ResponseCodes {
     BinaryResponse = 0x8C,
 }
 
-#[derive(FromRepr)]
+#[derive(FromRepr, Copy, Clone, Debug)]
 #[repr(u8)]
 pub enum StatTypes {
     Core = 0,
@@ -956,8 +956,18 @@ impl CompanionSer for CoreStats {
         out.finish()
     }
 
-    fn companion_deserialize<'d>(_input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        todo!()
+    fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        input.read_u8()?; // ?????????
+        if input.read_u8()? != StatTypes::Core as u8 {
+            return Err(DecodeError::InvalidBitPattern);
+        }
+
+        Ok(CoreStats {
+            battery_mv: input.read_u16_le()?,
+            uptime_secs: input.read_u32_le()?,
+            errors: input.read_u16_le()?,
+            queue_len: input.read_u8()?,
+        })
     }
 }
 
@@ -992,8 +1002,19 @@ impl CompanionSer for RadioStats {
         out.finish()
     }
 
-    fn companion_deserialize<'d>(_input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        todo!()
+    fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        input.read_u8()?; // ?????????
+        if input.read_u8()? != StatTypes::Radio as u8 {
+            return Err(DecodeError::InvalidBitPattern);
+        }
+
+        Ok(RadioStats {
+            noise_floor: i16::from_le_bytes(*input.read_chunk()?),
+            last_rssi: input.read_i8()?,
+            last_snr: input.read_i8()? / 4,
+            tx_air_secs: input.read_u32_le()?,
+            rx_air_secs: input.read_u32_le()?,
+        })
     }
 }
 
@@ -1032,8 +1053,21 @@ impl CompanionSer for PacketStats {
         out.finish()
     }
 
-    fn companion_deserialize<'d>(_input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        todo!()
+    fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        input.read_u8()?; // ?????????
+        if input.read_u8()? != StatTypes::Radio as u8 {
+            return Err(DecodeError::InvalidBitPattern);
+        }
+
+        Ok(PacketStats {
+            recv: input.read_u32_le()?,
+            sent: input.read_u32_le()?,
+            flood_tx: input.read_u32_le()?,
+            direct_tx: input.read_u32_le()?,
+            flood_rx: input.read_u32_le()?,
+            direct_rx: input.read_u32_le()?,
+            recv_errors: input.read_u32_le()?,
+        })
     }
 }
 
@@ -1078,8 +1112,35 @@ impl<'a> CompanionSer for TraceData<'a> {
         out.finish()
     }
 
-    fn companion_deserialize<'d>(_input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        todo!()
+    fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        if input.read_u8()? != ResponseCodes::TraceData as u8 {
+            return Err(DecodeError::InvalidBitPattern);
+        }
+
+        let reserved = input.read_u8()?;
+        let path_len = input.read_u8()?;
+        let flags = input.read_u8()?; // TODO: extract path mode out of this
+        let tag = *input.read_chunk()?;
+        let auth = *input.read_chunk()?;
+
+        // todo: support 2+ byte modes
+        let path = Path::from_bytes(
+            meshcore::PathHashMode::OneByte,
+            input.read_slice(path_len as usize)?,
+        );
+        let snrs =
+            unsafe { core::mem::transmute::<&[u8], &[i8]>(input.read_slice(path_len as usize)?) }; // todo: should this be -1?
+        let last_snr = input.read_i8()?;
+
+        Ok(TraceData {
+            reserved,
+            flags,
+            tag,
+            auth_code: auth,
+            path,
+            snrs: Cow::Borrowed(snrs),
+            last_snr,
+        })
     }
 }
 

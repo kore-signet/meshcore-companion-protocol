@@ -1,14 +1,15 @@
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, string::String};
 use meshcore::{
-    DecodeError, Path, PathLen,
+    DecodeError, Path, PathHashMode, PathLen,
     io::{SliceWriter, TinyReadExt},
-    payloads::TextType,
+    payloads::{AppdataFlags, TextType},
 };
+use modular_bitfield::Specifier;
 use strum::{EnumDiscriminants, FromRepr, IntoDiscriminant};
 
 use crate::{
     CompanionSer, NullPaddedString,
-    responses::{ControlData, StatTypes},
+    responses::{Contact, ControlData, StatTypes},
 };
 
 #[derive(EnumDiscriminants)]
@@ -24,7 +25,7 @@ pub enum HostCommand<'a> {
     SetDeviceTime(SetDeviceTime) = 6,
     SendSelfAdvert(SendSelfAdvert) = 7,
     SetAdvertName(SetAdvertName<'a>) = 8,
-    AddUpdateContact = 9, // TODO
+    AddUpdateContact(AddUpdateContact) = 9,
     SyncNextMessage = 10,
     SetRadioParams(SetRadioParams) = 11,
     SetTxPower(SetTxPower) = 12,
@@ -53,11 +54,11 @@ pub enum HostCommand<'a> {
     SendTelemetryReq = 39, // TODO
     SendBinaryReq(SendBinaryReq<'a>) = 50,
     SetFloodScope(SetFloodScope<'a>) = 54,
-    GetCustomVars = 40, // TODO
-    SetCustomVar = 41,  // TODO
+    GetCustomVars = 40,
+    SetCustomVar(SetCustomVar<'a>) = 41, // TODO
     SendControlData(ControlData<'a>) = 55,
-    GetStats = 56,    // TODO
-    SendAnonReq = 57, // TODO
+    GetStats(GetStats) = 56,
+    SendAnonReq(SendAnonReq<'a>) = 57,
 }
 
 impl<'a> CompanionSer for HostCommand<'a> {
@@ -73,7 +74,7 @@ impl<'a> CompanionSer for HostCommand<'a> {
             HostCommand::SetDeviceTime(set_device_time) => set_device_time.ser_size(),
             HostCommand::SendSelfAdvert(send_self_advert) => send_self_advert.ser_size(),
             HostCommand::SetAdvertName(set_advert_name) => set_advert_name.ser_size(),
-            HostCommand::AddUpdateContact => 0,
+            HostCommand::AddUpdateContact(v) => v.ser_size(),
             HostCommand::SyncNextMessage => 0,
             HostCommand::SetRadioParams(set_radio_params) => set_radio_params.ser_size(),
             HostCommand::SetTxPower(set_tx_power) => set_tx_power.ser_size(),
@@ -102,11 +103,11 @@ impl<'a> CompanionSer for HostCommand<'a> {
             HostCommand::SendTelemetryReq => todo!(),
             HostCommand::SendBinaryReq(send_binary_req) => send_binary_req.ser_size(),
             HostCommand::SetFloodScope(set_flood_scope) => set_flood_scope.ser_size(),
-            HostCommand::GetCustomVars => todo!(),
-            HostCommand::SetCustomVar => todo!(),
+            HostCommand::GetCustomVars => 0,
+            HostCommand::SetCustomVar(a) => a.ser_size(),
             HostCommand::SendControlData(control_data) => control_data.ser_size(),
-            HostCommand::GetStats => todo!(),
-            HostCommand::SendAnonReq => todo!(),
+            HostCommand::GetStats(a) => a.ser_size(),
+            HostCommand::SendAnonReq(a) => a.ser_size(),
         }
     }
 
@@ -140,6 +141,10 @@ impl<'a> CompanionSer for HostCommand<'a> {
             HostCommand::SendBinaryReq(a) => a.companion_serialize(&mut out[1..]),
             HostCommand::SetFloodScope(a) => a.companion_serialize(&mut out[1..]),
             HostCommand::SendControlData(a) => a.companion_serialize(&mut out[1..]),
+            HostCommand::SendAnonReq(a) => a.companion_serialize(&mut out[1..]),
+            HostCommand::AddUpdateContact(a) => a.companion_serialize(&mut out[1..]),
+            HostCommand::GetStats(a) => a.companion_serialize(&mut out[1..]),
+            HostCommand::SetCustomVar(a) => a.companion_serialize(&mut out[1..]),
             _ => &[],
         };
         let s_len = s.len();
@@ -176,7 +181,9 @@ impl<'a> CompanionSer for HostCommand<'a> {
                 HostCommandType::SetAdvertName => {
                     HostCommand::SetAdvertName(SetAdvertName::companion_deserialize(input)?)
                 }
-                HostCommandType::AddUpdateContact => todo!(),
+                HostCommandType::AddUpdateContact => {
+                    HostCommand::AddUpdateContact(AddUpdateContact::companion_deserialize(input)?)
+                }
                 HostCommandType::SyncNextMessage => HostCommand::SyncNextMessage,
                 HostCommandType::SetRadioParams => {
                     HostCommand::SetRadioParams(SetRadioParams::companion_deserialize(input)?)
@@ -243,13 +250,19 @@ impl<'a> CompanionSer for HostCommand<'a> {
                 HostCommandType::SetFloodScope => {
                     HostCommand::SetFloodScope(SetFloodScope::companion_deserialize(input)?)
                 }
-                HostCommandType::GetCustomVars => todo!(),
-                HostCommandType::SetCustomVar => todo!(),
+                HostCommandType::GetCustomVars => HostCommand::GetCustomVars,
+                HostCommandType::SetCustomVar => {
+                    HostCommand::SetCustomVar(SetCustomVar::companion_deserialize(input)?)
+                }
                 HostCommandType::SendControlData => {
                     HostCommand::SendControlData(ControlData::companion_deserialize(input)?)
                 }
-                HostCommandType::GetStats => todo!(),
-                HostCommandType::SendAnonReq => todo!(),
+                HostCommandType::GetStats => {
+                    HostCommand::GetStats(GetStats::companion_deserialize(input)?)
+                }
+                HostCommandType::SendAnonReq => {
+                    HostCommand::SendAnonReq(SendAnonReq::companion_deserialize(input)?)
+                }
             },
         )
     }
@@ -953,17 +966,21 @@ impl CompanionSer for GetStats {
     type Decoded<'data> = GetStats;
 
     fn ser_size(&self) -> usize {
-        todo!()
+        1
     }
 
-    fn companion_serialize<'d>(&self, _out: &'d mut [u8]) -> &'d [u8] {
-        todo!()
+    fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
+        out[0] = self.stats_type as u8;
+        &out[..1]
     }
 
     fn companion_deserialize<'d>(
-        _input: &'d [u8],
+        mut input: &'d [u8],
     ) -> Result<Self::Decoded<'d>, meshcore::DecodeError> {
-        todo!()
+        Ok(GetStats {
+            stats_type: StatTypes::from_repr(input.read_u8()?)
+                .ok_or(DecodeError::InvalidBitPattern)?,
+        })
     }
 }
 
@@ -1089,26 +1106,183 @@ impl<'a> CompanionSer for SignData<'a> {
 // pub struct SignFinish;
 
 pub struct SendTracePath<'a> {
-    pub tag: u32,
-    pub auth: u32,
+    pub tag: [u8; 4],
+    pub auth: [u8; 4],
     pub flags: u8,
-    pub path: Cow<'a, [u8]>,
+    pub path: Path<'a>,
 }
 
 impl<'a> CompanionSer for SendTracePath<'a> {
     type Decoded<'data> = SendTracePath<'data>;
 
     fn ser_size(&self) -> usize {
-        todo!()
+        4 + 4 + 1 + self.path.len()
     }
 
-    fn companion_serialize<'d>(&self, _out: &'d mut [u8]) -> &'d [u8] {
-        todo!()
+    fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
+        let mut out = SliceWriter::new(out);
+        out.write_slice(&self.tag);
+        out.write_slice(&self.auth);
+        out.write_u8(self.flags);
+        out.write_slice(self.path.raw_bytes());
+        out.finish()
     }
 
     fn companion_deserialize<'d>(
-        _input: &'d [u8],
+        mut input: &'d [u8],
     ) -> Result<Self::Decoded<'d>, meshcore::DecodeError> {
-        todo!()
+        let tag = *input.read_chunk()?;
+        let auth = *input.read_chunk()?;
+        let flags = input.read_u8()?;
+
+        Ok(SendTracePath {
+            tag,
+            auth,
+            flags,
+            path: Path::from_bytes(
+                PathHashMode::from_bytes(flags & 0x03)
+                    .map_err(|_| DecodeError::InvalidBitPattern)?,
+                input,
+            ),
+        })
+    }
+}
+
+pub struct SendAnonReq<'a> {
+    pub pubkey: [u8; 32],
+    pub data: Cow<'a, [u8]>,
+}
+
+impl<'a> CompanionSer for SendAnonReq<'a> {
+    type Decoded<'data> = SendAnonReq<'data>;
+
+    fn ser_size(&self) -> usize {
+        32 + self.data.len()
+    }
+
+    fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
+        let mut out = SliceWriter::new(out);
+        out.write_slice(&self.pubkey);
+        out.write_slice(&self.data);
+        out.finish()
+    }
+
+    fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        Ok(SendAnonReq {
+            pubkey: *input.read_chunk()?,
+            data: Cow::Borrowed(input),
+        })
+    }
+}
+
+pub struct AddUpdateContact(pub Contact);
+
+impl CompanionSer for AddUpdateContact {
+    type Decoded<'data> = AddUpdateContact;
+
+    fn ser_size(&self) -> usize {
+        32 + 1 + 1 + 1 + self.0.path_to.as_ref().map_or(0, |v| v.byte_size()) + 32 + 4 + 4 + 4
+    }
+
+    fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
+        let mut out = SliceWriter::new(out);
+
+        let Contact {
+            key,
+            name,
+            path_to,
+            flags,
+            latitude,
+            longitude,
+            last_heard,
+        } = &self.0;
+
+        out.write_slice(key);
+        let flags = AppdataFlags::from_bits(*flags).unwrap();
+        let adv_ty = if flags.contains(AppdataFlags::IS_CHAT_NODE) {
+            1
+        } else if flags.contains(AppdataFlags::IS_REPEATER) {
+            2
+        } else if flags.contains(AppdataFlags::IS_ROOM_SERVER) {
+            3
+        } else {
+            0
+        };
+
+        out.write_u8(adv_ty);
+        out.write_u8(flags.bits());
+        if let Some(path) = path_to {
+            out.write_u8(path.path_len_header().into_bytes()[0]);
+            out.write_slice(path.raw_bytes());
+        } else {
+            out.write_u8(0)
+        }
+
+        NullPaddedString::<'_, 32>(Cow::Borrowed(name.as_str())).encode_to(&mut out);
+        out.write_u32_le(*last_heard);
+        out.write_u32_le(*latitude);
+        out.write_u32_le(*longitude);
+
+        out.finish()
+    }
+
+    fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        let pk = input.read_chunk::<32>()?;
+        let _ty = input.read_u8()?;
+        let flags = input.read_u8()?;
+        let out_path_len = PathLen::from_bytes([input.read_u8()?]);
+        let path = if out_path_len.byte_size() > 0 {
+            Some(Path::from_bytes(
+                out_path_len.mode(),
+                input.read_slice(out_path_len.byte_size())?,
+            ))
+        } else {
+            None
+        };
+        let name = NullPaddedString::<'_, 32>::read(&mut input)?;
+        let last_adv = input.read_u32_le()?;
+        let lat = input.read_u32_le()?;
+        let long = input.read_u32_le()?;
+        Ok(AddUpdateContact(Contact {
+            key: *pk,
+            name: String::from(name.0),
+            path_to: path.map(|v| v.to_owned()),
+            flags,
+            latitude: lat,
+            longitude: long,
+            last_heard: last_adv,
+        }))
+    }
+}
+
+pub struct SetCustomVar<'a> {
+    pub key: Cow<'a, str>,
+    pub value: Cow<'a, str>,
+}
+
+impl<'a> CompanionSer for SetCustomVar<'a> {
+    type Decoded<'data> = SetCustomVar<'data>;
+
+    fn ser_size(&self) -> usize {
+        self.key.len() + 1 + self.value.len()
+    }
+
+    fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
+        let mut out = SliceWriter::new(out);
+        out.write_slice(self.key.as_bytes());
+        out.write_u8(b':');
+        out.write_slice(self.value.as_bytes());
+        out.finish()
+    }
+
+    fn companion_deserialize<'d>(input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
+        let s = core::str::from_utf8(input)?;
+        let Some((key, val)) = s.split_once(':') else {
+            return Err(DecodeError::InvalidBitPattern);
+        };
+        Ok(SetCustomVar {
+            key: Cow::Borrowed(key),
+            value: Cow::Borrowed(val),
+        })
     }
 }
