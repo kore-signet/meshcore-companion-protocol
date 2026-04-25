@@ -13,7 +13,7 @@ use strum::FromRepr;
 
 use crate::{CompanionSer, NullPaddedSlice, NullPaddedString};
 
-#[derive(FromRepr)]
+#[derive(FromRepr, PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum ResponseCodes {
     Ok = 0x00,
