@@ -9,6 +9,7 @@ use meshcore::{
     payloads::{AppdataFlags, TextType},
     repeater_protocol::Permissions,
 };
+use serde::{Deserialize, Serialize};
 use strum::FromRepr;
 
 use crate::{CompanionSer, NullPaddedSlice, NullPaddedString};
@@ -1222,7 +1223,7 @@ impl<'a> CompanionSer for BinaryResponse<'a> {
     }
 }
 
-// #[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Contact {
     pub key: [u8; 32],
     pub name: String,

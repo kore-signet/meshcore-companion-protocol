@@ -7,4 +7,5 @@ edition = "2024"
 memchr = { version = "2.8.0", default-features = false, features = ["alloc"] }
 meshcore = { git = "https://github.com/kore-signet/meshcore", version = "0.1.0", default-features = false }
 modular-bitfield = "0.13.1"
+serde = { version = "1.0.228", default-features = false, features = ["alloc", "derive"] }
 strum = { version = "0.28.0", features = ["derive"], default-features = false }

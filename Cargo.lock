@@ -256,6 +256,7 @@ dependencies = [
  "memchr",
  "meshcore",
  "modular-bitfield",
+ "serde",
  "strum",
 ]
 
