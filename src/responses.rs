@@ -558,6 +558,31 @@ impl<'a> CompanionSer for ContactMsgRecv<'a> {
     }
 }
 
+impl<'a> ContactMsgRecv<'a> {
+    pub fn clone_with_data(&self) -> ContactMsgRecv<'static> {
+        let ContactMsgRecv {
+            snr,
+            reserved,
+            pk_prefix,
+            path_len,
+            text_ty,
+            timestamp,
+            signature,
+            data,
+        } = self;
+        ContactMsgRecv {
+            snr: *snr,
+            reserved: *reserved,
+            pk_prefix: *pk_prefix,
+            path_len: *path_len,
+            text_ty: *text_ty,
+            timestamp: *timestamp,
+            signature: *signature,
+            data: Cow::Owned(data.to_vec()),
+        }
+    }
+}
+
 impl<'a> CompanionSer for ChannelMsgRecv<'a> {
     type Decoded<'data> = ChannelMsgRecv<'data>;
 
@@ -604,6 +629,30 @@ impl<'a> CompanionSer for ChannelMsgRecv<'a> {
             timestamp: input.read_u32_le()?,
             data: Cow::Borrowed(input),
         })
+    }
+}
+
+
+impl<'a> ChannelMsgRecv<'a> {
+    pub fn clone_with_data(&self) -> ChannelMsgRecv<'static> {
+        let ChannelMsgRecv {
+            snr,
+            reserved,
+            idx,
+            path_len,
+            text_ty,
+            timestamp,
+            data,
+        } = self;
+        ChannelMsgRecv {
+            snr: *snr,
+            reserved: *reserved,
+            idx: *idx,
+            path_len: *path_len,
+            text_ty: *text_ty,
+            timestamp: *timestamp,
+            data: Cow::Owned(data.to_vec()),
+        }
     }
 }
 
