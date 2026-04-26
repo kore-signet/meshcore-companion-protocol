@@ -1272,7 +1272,7 @@ impl<'a> CompanionSer for BinaryResponse<'a> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
     pub key: [u8; 32],
     pub name: String,
