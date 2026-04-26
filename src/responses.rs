@@ -202,7 +202,7 @@ impl CompanionSer for Err {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::Ok as u8);
+        out.write_u8(ResponseCodes::Err as u8);
         if let Some(code) = self.code {
             out.write_u8(code);
         }
