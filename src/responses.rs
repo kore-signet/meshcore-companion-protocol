@@ -55,7 +55,7 @@ pub enum StatTypes {
     Packets = 2,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMsgRecv<'a> {
     pub snr: i8,
     pub reserved: [u8; 2],
@@ -66,7 +66,7 @@ pub struct ChannelMsgRecv<'a> {
     pub data: Cow<'a, [u8]>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContactMsgRecv<'a> {
     pub snr: i8,
     pub reserved: [u8; 2],
@@ -78,7 +78,7 @@ pub struct ContactMsgRecv<'a> {
     pub data: Cow<'a, [u8]>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GetMessageRes<'a> {
     Contact(ContactMsgRecv<'a>),
     Channel(ChannelMsgRecv<'a>),
