@@ -11,12 +11,13 @@ use meshcore::{
 };
 use serde::{Deserialize, Serialize};
 use strum::FromRepr;
+use yoke::Yokeable;
 
 use crate::{CompanionSer, NullPaddedSlice, NullPaddedString};
 
 #[derive(FromRepr, PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord)]
 #[repr(u8)]
-pub enum ResponseCodes {
+pub enum ResponseCode {
     Ok = 0x00,
     Err = 0x01,
     ContactsStart = 0x02,
@@ -55,7 +56,7 @@ pub enum StatTypes {
     Packets = 2,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Yokeable)]
 pub struct ChannelMsgRecv<'a> {
     pub snr: i8,
     pub reserved: [u8; 2],
@@ -66,7 +67,7 @@ pub struct ChannelMsgRecv<'a> {
     pub data: Cow<'a, [u8]>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Yokeable)]
 pub struct ContactMsgRecv<'a> {
     pub snr: i8,
     pub reserved: [u8; 2],
@@ -78,7 +79,7 @@ pub struct ContactMsgRecv<'a> {
     pub data: Cow<'a, [u8]>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Yokeable)]
 pub enum GetMessageRes<'a> {
     Contact(ContactMsgRecv<'a>),
     Channel(ChannelMsgRecv<'a>),
@@ -102,23 +103,23 @@ impl<'a> CompanionSer for GetMessageRes<'a> {
             GetMessageRes::Channel(channel_msg_recv) => channel_msg_recv.companion_serialize(out),
             GetMessageRes::NoMoreMessages => {
                 let mut out = SliceWriter::new(out);
-                out.write_u8(ResponseCodes::NoMoreMessages as u8);
+                out.write_u8(ResponseCode::NoMoreMessages as u8);
                 out.finish()
             }
         }
     }
 
     fn companion_deserialize<'d>(input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        match ResponseCodes::from_repr(*input.first().ok_or(DecodeError::UnexpectedEof)?)
+        match ResponseCode::from_repr(*input.first().ok_or(DecodeError::UnexpectedEof)?)
             .ok_or(DecodeError::InvalidBitPattern)?
         {
-            ResponseCodes::ContactMsgRecvV3 => {
+            ResponseCode::ContactMsgRecvV3 => {
                 ContactMsgRecv::companion_deserialize(input).map(GetMessageRes::Contact)
             }
-            ResponseCodes::ChannelMsgRecvV3 => {
+            ResponseCode::ChannelMsgRecvV3 => {
                 ChannelMsgRecv::companion_deserialize(input).map(GetMessageRes::Channel)
             }
-            ResponseCodes::NoMoreMessages => Ok(GetMessageRes::NoMoreMessages),
+            ResponseCode::NoMoreMessages => Ok(GetMessageRes::NoMoreMessages),
             _ => Err(DecodeError::InvalidBitPattern),
         }
     }
@@ -147,7 +148,7 @@ impl<T: CompanionSer> CompanionSer for CompanionProtoResult<T> {
     }
 
     fn companion_deserialize<'d>(input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if *input.first().ok_or(DecodeError::UnexpectedEof)? == ResponseCodes::Err as u8 {
+        if *input.first().ok_or(DecodeError::UnexpectedEof)? == ResponseCode::Err as u8 {
             Ok(Err(Err::companion_deserialize(input)?))
         } else {
             Ok(Ok(T::companion_deserialize(input)?))
@@ -155,6 +156,7 @@ impl<T: CompanionSer> CompanionSer for CompanionProtoResult<T> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct Ok {
     pub code: Option<u32>,
 }
@@ -168,7 +170,7 @@ impl CompanionSer for Ok {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::Ok as u8);
+        out.write_u8(ResponseCode::Ok as u8);
         if let Some(code) = self.code {
             out.write_u32_le(code);
         }
@@ -176,7 +178,7 @@ impl CompanionSer for Ok {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::Ok as u8 {
+        if input.read_u8()? != ResponseCode::Ok as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -190,6 +192,7 @@ impl CompanionSer for Ok {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct Err {
     pub code: Option<u8>,
 }
@@ -203,7 +206,7 @@ impl CompanionSer for Err {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::Err as u8);
+        out.write_u8(ResponseCode::Err as u8);
         if let Some(code) = self.code {
             out.write_u8(code);
         }
@@ -211,7 +214,7 @@ impl CompanionSer for Err {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::Err as u8 {
+        if input.read_u8()? != ResponseCode::Err as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -223,6 +226,7 @@ impl CompanionSer for Err {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct SelfInfo<'a> {
     pub advertisement_type: u8,
     pub tx_power: u8,
@@ -258,7 +262,7 @@ impl<'a> CompanionSer for SelfInfo<'a> {
         let mut out = SliceWriter::new(out);
 
         out.write_slice(&[
-            ResponseCodes::SelfInfo as u8,
+            ResponseCode::SelfInfo as u8,
             self.advertisement_type,
             self.tx_power,
             self.max_tx_power,
@@ -286,7 +290,7 @@ impl<'a> CompanionSer for SelfInfo<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::SelfInfo as u8 {
+        if input.read_u8()? != ResponseCode::SelfInfo as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -310,6 +314,7 @@ impl<'a> CompanionSer for SelfInfo<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct DeviceInfo<'a> {
     pub fw_version: u8,
     pub max_contacts: u8,
@@ -339,7 +344,7 @@ impl<'a> CompanionSer for DeviceInfo<'a> {
         let mut out = SliceWriter::new(out);
 
         out.write_slice(&[
-            ResponseCodes::DeviceInfo as u8,
+            ResponseCode::DeviceInfo as u8,
             self.fw_version,
             self.max_contacts,
             self.max_channels,
@@ -356,7 +361,7 @@ impl<'a> CompanionSer for DeviceInfo<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::DeviceInfo as u8 {
+        if input.read_u8()? != ResponseCode::DeviceInfo as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -374,6 +379,7 @@ impl<'a> CompanionSer for DeviceInfo<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct ChannelInfo<'a> {
     pub idx: u8,
     pub name: NullPaddedString<'a, 32>,
@@ -391,7 +397,7 @@ impl<'a> CompanionSer for ChannelInfo<'a> {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_slice(&[ResponseCodes::ChannelInfo as u8, self.idx]);
+        out.write_slice(&[ResponseCode::ChannelInfo as u8, self.idx]);
         self.name.encode_to(&mut out);
         out.write_slice(&self.secret);
 
@@ -399,7 +405,7 @@ impl<'a> CompanionSer for ChannelInfo<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::ChannelInfo as u8 {
+        if input.read_u8()? != ResponseCode::ChannelInfo as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -411,6 +417,7 @@ impl<'a> CompanionSer for ChannelInfo<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct Battery {
     pub battery_voltage: u16,
     pub used_storage: u32,
@@ -430,7 +437,7 @@ impl CompanionSer for Battery {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::Battery as u8);
+        out.write_u8(ResponseCode::Battery as u8);
         out.write_u16_le(self.battery_voltage);
         out.write_u32_le(self.used_storage);
         out.write_u32_le(self.total_storage);
@@ -439,7 +446,7 @@ impl CompanionSer for Battery {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::Battery as u8 {
+        if input.read_u8()? != ResponseCode::Battery as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -451,6 +458,7 @@ impl CompanionSer for Battery {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct MsgSent {
     pub is_flood: bool,
     pub expected_ack: [u8; 4],
@@ -470,7 +478,7 @@ impl CompanionSer for MsgSent {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::MsgSent as u8);
+        out.write_u8(ResponseCode::MsgSent as u8);
         out.write_u8(self.is_flood as u8);
         out.write_slice(&self.expected_ack);
         out.write_u32_le(self.suggested_timeout);
@@ -479,7 +487,7 @@ impl CompanionSer for MsgSent {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::MsgSent as u8 {
+        if input.read_u8()? != ResponseCode::MsgSent as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -509,7 +517,7 @@ impl<'a> CompanionSer for ContactMsgRecv<'a> {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::ContactMsgRecvV3 as u8);
+        out.write_u8(ResponseCode::ContactMsgRecvV3 as u8);
         out.write_i8(self.snr);
         out.write_slice(&self.reserved);
         out.write_slice(&self.pk_prefix);
@@ -527,7 +535,7 @@ impl<'a> CompanionSer for ContactMsgRecv<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::ContactMsgRecvV3 as u8 {
+        if input.read_u8()? != ResponseCode::ContactMsgRecvV3 as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
         let snr = input.read_i8()?;
@@ -600,7 +608,7 @@ impl<'a> CompanionSer for ChannelMsgRecv<'a> {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::ChannelMsgRecvV3 as u8);
+        out.write_u8(ResponseCode::ChannelMsgRecvV3 as u8);
         out.write_i8(self.snr);
         out.write_slice(&self.reserved);
         out.write_slice(&[self.idx, self.path_len, self.text_ty as u8]);
@@ -611,7 +619,7 @@ impl<'a> CompanionSer for ChannelMsgRecv<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::ChannelMsgRecvV3 as u8 {
+        if input.read_u8()? != ResponseCode::ChannelMsgRecvV3 as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -656,6 +664,7 @@ impl<'a> ChannelMsgRecv<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct ContactStart {
     pub contacts: u32,
 }
@@ -669,13 +678,13 @@ impl CompanionSer for ContactStart {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::ContactsStart as u8);
+        out.write_u8(ResponseCode::ContactsStart as u8);
         out.write_u32_le(self.contacts);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::ContactsStart as u8 {
+        if input.read_u8()? != ResponseCode::ContactsStart as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -685,6 +694,7 @@ impl CompanionSer for ContactStart {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct ContactEnd {
     pub last_mod: u32,
 }
@@ -699,14 +709,14 @@ impl CompanionSer for ContactEnd {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::EndOfContacts as u8);
+        out.write_u8(ResponseCode::EndOfContacts as u8);
         out.write_u32_le(self.last_mod);
 
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::EndOfContacts as u8 {
+        if input.read_u8()? != ResponseCode::EndOfContacts as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -716,6 +726,7 @@ impl CompanionSer for ContactEnd {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct Ack {
     pub code: [u8; 4],
 }
@@ -730,14 +741,14 @@ impl CompanionSer for Ack {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::Ack as u8);
+        out.write_u8(ResponseCode::Ack as u8);
         out.write_slice(&self.code);
 
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::Ack as u8 {
+        if input.read_u8()? != ResponseCode::Ack as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -747,6 +758,7 @@ impl CompanionSer for Ack {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct RfLogData<'a> {
     pub snr: i8,
     pub rssi: i8,
@@ -762,7 +774,7 @@ impl<'a> CompanionSer for RfLogData<'a> {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::LogData as u8);
+        out.write_u8(ResponseCode::LogData as u8);
         out.write_i8(self.snr);
         out.write_i8(self.rssi);
         out.write_slice(self.data);
@@ -770,7 +782,7 @@ impl<'a> CompanionSer for RfLogData<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::LogData as u8 {
+        if input.read_u8()? != ResponseCode::LogData as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -782,6 +794,7 @@ impl<'a> CompanionSer for RfLogData<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct CurrentTime {
     pub time: u32,
 }
@@ -795,13 +808,13 @@ impl CompanionSer for CurrentTime {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::CurrTime as u8);
+        out.write_u8(ResponseCode::CurrTime as u8);
         out.write_u32_le(self.time);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::CurrTime as u8 {
+        if input.read_u8()? != ResponseCode::CurrTime as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
         Ok(CurrentTime {
@@ -810,6 +823,7 @@ impl CompanionSer for CurrentTime {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct LoginSuccess {
     pub permissions: Permissions,
     pub prefix: [u8; 6],
@@ -824,14 +838,14 @@ impl CompanionSer for LoginSuccess {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::LoginSuccess as u8);
+        out.write_u8(ResponseCode::LoginSuccess as u8);
         out.write_u8(self.permissions.into_bytes()[0]);
         out.write_slice(&self.prefix);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::LoginSuccess as u8 {
+        if input.read_u8()? != ResponseCode::LoginSuccess as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -842,6 +856,7 @@ impl CompanionSer for LoginSuccess {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct SignStart {
     pub reserved: u8,
     pub max_len: u32,
@@ -856,14 +871,14 @@ impl CompanionSer for SignStart {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::SignStart as u8);
+        out.write_u8(ResponseCode::SignStart as u8);
         out.write_u8(self.reserved);
         out.write_u32_le(self.max_len);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::SignStart as u8 {
+        if input.read_u8()? != ResponseCode::SignStart as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -874,6 +889,7 @@ impl CompanionSer for SignStart {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct SignatureResponse {
     pub signature: [u8; 64],
 }
@@ -887,13 +903,13 @@ impl CompanionSer for SignatureResponse {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::Signature as u8);
+        out.write_u8(ResponseCode::Signature as u8);
         out.write_slice(&self.signature);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::Signature as u8 {
+        if input.read_u8()? != ResponseCode::Signature as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -903,6 +919,7 @@ impl CompanionSer for SignatureResponse {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct PrivateKeyResponse {
     pub key: [u8; 64],
 }
@@ -916,13 +933,13 @@ impl CompanionSer for PrivateKeyResponse {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::ExportPrivateKey as u8);
+        out.write_u8(ResponseCode::ExportPrivateKey as u8);
         out.write_slice(&self.key);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::ExportPrivateKey as u8 {
+        if input.read_u8()? != ResponseCode::ExportPrivateKey as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -932,6 +949,7 @@ impl CompanionSer for PrivateKeyResponse {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct CustomVars(pub Vec<(String, String)>);
 
 impl<'a> CompanionSer for CustomVars {
@@ -948,7 +966,7 @@ impl<'a> CompanionSer for CustomVars {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::CustomVars as u8);
+        out.write_u8(ResponseCode::CustomVars as u8);
         let mut iter = self.0.iter().peekable();
         while let Some((k, v)) = iter.next() {
             out.write_slice(k.as_bytes());
@@ -963,7 +981,7 @@ impl<'a> CompanionSer for CustomVars {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::CustomVars as u8 {
+        if input.read_u8()? != ResponseCode::CustomVars as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -977,7 +995,7 @@ impl<'a> CompanionSer for CustomVars {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Yokeable)]
 pub struct CoreStats {
     pub battery_mv: u16,
     pub uptime_secs: u32,
@@ -1021,7 +1039,7 @@ impl CompanionSer for CoreStats {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Yokeable)]
 pub struct RadioStats {
     pub noise_floor: i16,
     pub last_rssi: i8,
@@ -1068,7 +1086,7 @@ impl CompanionSer for RadioStats {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Yokeable)]
 pub struct PacketStats {
     pub recv: u32,
     pub sent: u32,
@@ -1121,6 +1139,7 @@ impl CompanionSer for PacketStats {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct TraceData<'a> {
     pub reserved: u8,
     pub flags: u8,
@@ -1149,7 +1168,7 @@ impl<'a> CompanionSer for TraceData<'a> {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::TraceData as u8);
+        out.write_u8(ResponseCode::TraceData as u8);
         out.write_u8(self.reserved);
         out.write_u8(self.path.len() as u8);
         out.write_u8(self.flags | (self.path.mode as u8 & 0x03));
@@ -1163,7 +1182,7 @@ impl<'a> CompanionSer for TraceData<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::TraceData as u8 {
+        if input.read_u8()? != ResponseCode::TraceData as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -1194,6 +1213,7 @@ impl<'a> CompanionSer for TraceData<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct ControlData<'a> {
     pub snr: i8,
     pub rssi: i8,
@@ -1215,7 +1235,7 @@ impl<'a> CompanionSer for ControlData<'a> {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::ControlData as u8);
+        out.write_u8(ResponseCode::ControlData as u8);
         out.write_i8(self.snr);
         out.write_i8(self.rssi);
         out.write_u8(self.path_len);
@@ -1225,7 +1245,7 @@ impl<'a> CompanionSer for ControlData<'a> {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::ControlData as u8 {
+        if input.read_u8()? != ResponseCode::ControlData as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -1238,6 +1258,7 @@ impl<'a> CompanionSer for ControlData<'a> {
     }
 }
 
+#[derive(Debug, Yokeable, Clone)]
 pub struct BinaryResponse<'a> {
     pub data: Cow<'a, [u8]>,
 }
@@ -1253,14 +1274,14 @@ impl<'a> CompanionSer for BinaryResponse<'a> {
 
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
-        out.write_u8(ResponseCodes::BinaryResponse as u8);
+        out.write_u8(ResponseCode::BinaryResponse as u8);
         out.write_u8(0); // reserved
         out.write_slice(&self.data);
         out.finish()
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::BinaryResponse as u8 {
+        if input.read_u8()? != ResponseCode::BinaryResponse as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 
@@ -1272,7 +1293,7 @@ impl<'a> CompanionSer for BinaryResponse<'a> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Yokeable)]
 pub struct Contact {
     pub key: [u8; 32],
     pub name: String,
@@ -1303,7 +1324,7 @@ impl CompanionSer for Contact {
     fn companion_serialize<'d>(&self, out: &'d mut [u8]) -> &'d [u8] {
         let mut out = SliceWriter::new(out);
 
-        out.write_u8(ResponseCodes::Contact as u8);
+        out.write_u8(ResponseCode::Contact as u8);
         out.write_slice(&self.key);
         let flags = AppdataFlags::from_bits(self.flags).unwrap();
         let adv_ty = if flags.contains(AppdataFlags::IS_CHAT_NODE) {
@@ -1337,7 +1358,7 @@ impl CompanionSer for Contact {
     }
 
     fn companion_deserialize<'d>(mut input: &'d [u8]) -> Result<Self::Decoded<'d>, DecodeError> {
-        if input.read_u8()? != ResponseCodes::Contact as u8 {
+        if input.read_u8()? != ResponseCode::Contact as u8 {
             return Err(DecodeError::InvalidBitPattern);
         }
 

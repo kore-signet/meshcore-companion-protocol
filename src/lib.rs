@@ -27,6 +27,7 @@ fn trim_slice_nils(data: &[u8]) -> &[u8] {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct NullPaddedString<'a, const SIZE: usize>(pub Cow<'a, str>);
 
 impl<'a, const SIZE: usize> NullPaddedString<'a, SIZE> {
@@ -44,6 +45,7 @@ impl<'a, const SIZE: usize> NullPaddedString<'a, SIZE> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct NullPaddedSlice<'a, const SIZE: usize>(pub &'a [u8]);
 
 impl<'a, const SIZE: usize> From<&'a [u8]> for NullPaddedSlice<'a, SIZE> {
